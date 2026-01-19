@@ -3,15 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gesture Christmas Magic (Final Fix)</title>
+    <title>Gesture Christmas Magic (Ultimate)</title>
     <style>
         body { margin: 0; background-color: #050505; overflow: hidden; font-family: sans-serif; color: white;}
         #loading { 
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); 
             color: gold; text-align: center; background: rgba(0,0,0,0.9); padding: 30px; border-radius: 10px;
-            z-index: 999; border: 1px solid #333;
+            z-index: 999; border: 1px solid #333; pointer-events: none;
         }
-        .error-msg { color: #ff4444; margin-top: 15px; font-size: 14px; text-align: left; white-space: pre-wrap;}
+        .error-msg { color: #ff4444; margin-top: 15px; font-size: 14px; text-align: left; }
         .input_video { display: none; }
     </style>
     <script type="importmap">
@@ -29,8 +29,8 @@
 </head>
 <body>
     <div id="loading">
-        <h2 style="margin:0 0 10px 0;">正在启动...</h2>
-        <div style="font-size: 12px; color:#aaa;">如果长时间不动，请检查下方报错</div>
+        <h2 style="margin:0 0 10px 0;">正在启动魔法...</h2>
+        <div id="status-text" style="font-size: 12px; color:#aaa;">加载组件中...</div>
         <div id="error-log" class="error-msg"></div>
     </div>
     <video class="input_video"></video>
@@ -41,21 +41,26 @@
         import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
         import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 
-        // --- 全局变量声明 (解决 ReferenceError) ---
+        // --- 1. 全局变量定义 (防止 ReferenceError) ---
         let camera, scene, renderer, composer, mesh, dummy;
         let particles = [];
         let isHandOpen = false;
         
-        // 错误显示工具
+        // 状态显示工具
+        function updateStatus(msg) {
+            document.getElementById('status-text').innerText = msg;
+        }
         function logError(msg) {
             console.error(msg);
             const log = document.getElementById('error-log');
             log.innerHTML += `❌ ${msg}<br>`;
+            document.getElementById('status-text').innerText = "发生错误，请查看下方";
         }
 
         async function init() {
             try {
-                // 1. 初始化 Three.js 场景
+                updateStatus("初始化 3D 场景...");
+                // --- 2. 初始化 Three.js ---
                 scene = new THREE.Scene();
                 scene.fog = new THREE.FogExp2(0x050505, 0.02);
                 
@@ -67,7 +72,7 @@
                 renderer.toneMapping = THREE.ReinhardToneMapping;
                 document.body.appendChild(renderer.domElement);
 
-                // 2. 后处理
+                // 后处理
                 const renderScene = new RenderPass(scene, camera);
                 const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
                 bloomPass.threshold = 0;
@@ -78,7 +83,7 @@
                 composer.addPass(renderScene);
                 composer.addPass(bloomPass);
 
-                // 3. 粒子系统
+                // 粒子
                 const particleCount = 1000;
                 const geometry = new THREE.BoxGeometry(0.5, 0.5, 0.5);
                 const material = new THREE.MeshStandardMaterial({ color: 0xffd700, roughness: 0.2, metalness: 1.0 });
@@ -97,7 +102,6 @@
                     const r = (1 - (y + 20) / 40) * 15;
                     const x = Math.cos(theta) * r;
                     const z = Math.sin(theta) * r;
-                    
                     particles.push({
                         treePos: new THREE.Vector3(x, y, z),
                         scatterPos: new THREE.Vector3((Math.random()-0.5)*60, (Math.random()-0.5)*60, (Math.random()-0.5)*60),
@@ -105,9 +109,12 @@
                     });
                 }
 
-                // 4. MediaPipe 初始化
+                updateStatus("加载 AI 模型 (可能较慢)...");
+
+                // --- 3. MediaPipe 初始化 ---
+                // 检查库是否加载成功
                 if (typeof Hands === 'undefined' || typeof Camera === 'undefined') {
-                    throw new Error("MediaPipe 库加载失败(网络问题)。请尝试关闭 QUIC 协议或切换网络。");
+                    throw new Error("AI 模型库下载失败！请检查网络 (ERR_QUIC/Fetch Error)。");
                 }
 
                 const videoElement = document.getElementsByClassName('input_video')[0];
@@ -116,7 +123,7 @@
                 hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
                 
                 hands.onResults((results) => {
-                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('loading').style.display = 'none'; // 成功识别后隐藏loading
                     if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                         const landmarks = results.multiHandLandmarks[0];
                         const wrist = landmarks[0];
@@ -126,7 +133,7 @@
                     }
                 });
 
-                // 启动摄像头
+                updateStatus("正在请求摄像头权限...");
                 const cameraUtils = new Camera(videoElement, {
                     onFrame: async () => { await hands.send({image: videoElement}); },
                     width: 640, height: 480
@@ -134,20 +141,20 @@
                 
                 await cameraUtils.start();
                 
-                // 开始动画
+                updateStatus("启动完成！");
                 animate();
 
             } catch (e) {
                 logError(e.message);
                 if (e.name === 'NotReadableError') {
-                    logError("摄像头被占用！请关闭其他网页标签或会议软件。");
+                    logError("严重：摄像头被占用！请关闭所有其他网页/会议软件。");
                 }
             }
         }
 
         function animate() {
             requestAnimationFrame(animate);
-            if (!mesh || !composer) return; // 防止未初始化报错
+            if (!mesh || !composer) return; 
 
             for(let i=0; i<particles.length; i++) {
                 const p = particles[i];
@@ -164,10 +171,10 @@
             composer.render();
         }
 
-        // 运行主程序
+        // 启动
         init();
 
-        // 窗口自适应 (现在在这里访问 camera 不会报错了)
+        // 窗口自适应
         window.addEventListener('resize', () => {
             if (camera && renderer && composer) {
                 camera.aspect = window.innerWidth / window.innerHeight;
