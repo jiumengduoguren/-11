@@ -3,11 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gesture Christmas Magic</title>
+    <title>Gesture Christmas Magic (Debug版)</title>
     <style>
-        body { margin: 0; background-color: #050505; overflow: hidden; font-family: sans-serif; }
-        #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: gold; pointer-events: none;}
-        /* 隐藏视频源 */
+        body { margin: 0; background-color: #050505; overflow: hidden; font-family: sans-serif; color: white;}
+        #loading { 
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); 
+            color: gold; text-align: center; background: rgba(0,0,0,0.8); padding: 20px; border-radius: 10px;
+            z-index: 999;
+        }
+        .error-msg { color: #ff4444; margin-top: 10px; font-size: 14px; }
         .input_video { display: none; }
     </style>
     <script type="importmap">
@@ -24,7 +28,11 @@
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
 </head>
 <body>
-    <div id="loading">正在初始化圣诞魔法... (请允许摄像头权限)</div>
+    <div id="loading">
+        <div>正在初始化圣诞魔法...</div>
+        <div style="font-size: 12px; margin-top:5px; color:#aaa;">请确保允许摄像头权限且网络通畅</div>
+        <div id="error-log" class="error-msg"></div>
+    </div>
     <video class="input_video"></video>
     
     <script type="module">
@@ -33,127 +41,126 @@
         import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
         import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 
-        // 1. 场景初始化
-        const scene = new THREE.Scene();
-        scene.fog = new THREE.FogExp2(0x050505, 0.02);
-        
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        camera.position.z = 50;
+        // 错误捕捉工具
+        function logError(msg) {
+            console.error(msg);
+            document.getElementById('error-log').innerText = "错误: " + msg;
+        }
 
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.toneMapping = THREE.ReinhardToneMapping;
-        document.body.appendChild(renderer.domElement);
-
-        // 2. 后处理（发光效果）
-        const renderScene = new RenderPass(scene, camera);
-        const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
-        bloomPass.threshold = 0;
-        bloomPass.strength = 1.5;
-        bloomPass.radius = 0.5;
-        
-        const composer = new EffectComposer(renderer);
-        composer.addPass(renderScene);
-        composer.addPass(bloomPass);
-
-        // 3. 创建粒子系统 (圣诞树)
-        const particleCount = 1000;
-        const geometry = new THREE.BoxGeometry(0.5, 0.5, 0.5);
-        const material = new THREE.MeshStandardMaterial({ 
-            color: 0xffd700, 
-            roughness: 0.2, 
-            metalness: 1.0 
-        });
-        const mesh = new THREE.InstancedMesh(geometry, material, particleCount);
-        scene.add(mesh);
-
-        // 灯光
-        const light = new THREE.PointLight(0xff0000, 2, 100);
-        light.position.set(10, 10, 10);
-        scene.add(light);
-        scene.add(new THREE.AmbientLight(0x404040));
-
-        // 粒子数据
-        const dummy = new THREE.Object3D();
-        const particles = [];
-        for(let i=0; i<particleCount; i++) {
-            // 树形态坐标
-            const theta = i * 0.2;
-            const y = (i / particleCount) * 40 - 20;
-            const r = (1 - (y + 20) / 40) * 15;
-            const x = Math.cos(theta) * r;
-            const z = Math.sin(theta) * r;
+        try {
+            // 1. 场景初始化
+            const scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x050505, 0.02);
             
-            particles.push({
-                treePos: new THREE.Vector3(x, y, z),
-                scatterPos: new THREE.Vector3((Math.random()-0.5)*60, (Math.random()-0.5)*60, (Math.random()-0.5)*60),
-                currentPos: new THREE.Vector3(x, y, z)
-            });
-        }
+            const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 50;
 
-        // 4. MediaPipe 手势识别
-        const videoElement = document.getElementsByClassName('input_video')[0];
-        let isHandOpen = false;
+            const renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.toneMapping = THREE.ReinhardToneMapping;
+            document.body.appendChild(renderer.domElement);
 
-        function onResults(results) {
-            document.getElementById('loading').style.display = 'none';
-            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                // 简单的判断：检测食指指尖和手腕的距离
-                const landmarks = results.multiHandLandmarks[0];
-                const wrist = landmarks[0];
-                const indexTip = landmarks[8];
-                
-                // 计算距离
-                const distance = Math.sqrt(Math.pow(indexTip.x - wrist.x, 2) + Math.pow(indexTip.y - wrist.y, 2));
-                
-                // 距离大说明手掌张开，距离小说明握拳
-                isHandOpen = distance > 0.3; 
-            }
-        }
+            // 2. 后处理
+            const renderScene = new RenderPass(scene, camera);
+            const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+            bloomPass.threshold = 0;
+            bloomPass.strength = 1.5;
+            bloomPass.radius = 0.5;
+            
+            const composer = new EffectComposer(renderer);
+            composer.addPass(renderScene);
+            composer.addPass(bloomPass);
 
-        const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
-        hands.onResults(onResults);
+            // 3. 粒子系统
+            const particleCount = 1000;
+            const geometry = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+            const material = new THREE.MeshStandardMaterial({ color: 0xffd700, roughness: 0.2, metalness: 1.0 });
+            const mesh = new THREE.InstancedMesh(geometry, material, particleCount);
+            scene.add(mesh);
 
-        const cameraUtils = new Camera(videoElement, {
-            onFrame: async () => { await hands.send({image: videoElement}); },
-            width: 640, height: 480
-        });
-        cameraUtils.start();
+            const light = new THREE.PointLight(0xff0000, 2, 100);
+            light.position.set(10, 10, 10);
+            scene.add(light);
+            scene.add(new THREE.AmbientLight(0x404040));
 
-        // 5. 动画循环
-        function animate() {
-            requestAnimationFrame(animate);
-
-            // 粒子运动逻辑
+            const dummy = new THREE.Object3D();
+            const particles = [];
             for(let i=0; i<particleCount; i++) {
-                const p = particles[i];
-                const target = isHandOpen ? p.scatterPos : p.treePos;
+                const theta = i * 0.2;
+                const y = (i / particleCount) * 40 - 20;
+                const r = (1 - (y + 20) / 40) * 15;
+                const x = Math.cos(theta) * r;
+                const z = Math.sin(theta) * r;
                 
-                // 线性插值移动
-                p.currentPos.lerp(target, 0.05);
+                particles.push({
+                    treePos: new THREE.Vector3(x, y, z),
+                    scatterPos: new THREE.Vector3((Math.random()-0.5)*60, (Math.random()-0.5)*60, (Math.random()-0.5)*60),
+                    currentPos: new THREE.Vector3(x, y, z)
+                });
+            }
+
+            // 4. MediaPipe 手势识别 (带详细错误检查)
+            const videoElement = document.getElementsByClassName('input_video')[0];
+            let isHandOpen = false;
+
+            function onResults(results) {
+                // 只要有结果返回，就隐藏loading
+                document.getElementById('loading').style.display = 'none';
                 
-                dummy.position.copy(p.currentPos);
-                // 散开时旋转
-                if(isHandOpen) {
-                    dummy.rotation.x += 0.01;
-                    dummy.rotation.y += 0.01;
-                } else {
-                    dummy.rotation.set(0,0,0);
+                if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                    const landmarks = results.multiHandLandmarks[0];
+                    const wrist = landmarks[0];
+                    const indexTip = landmarks[8];
+                    const distance = Math.sqrt(Math.pow(indexTip.x - wrist.x, 2) + Math.pow(indexTip.y - wrist.y, 2));
+                    isHandOpen = distance > 0.3; 
                 }
-                dummy.updateMatrix();
-                mesh.setMatrixAt(i, dummy.matrix);
-            }
-            mesh.instanceMatrix.needsUpdate = true;
-
-            // 整体旋转
-            if(!isHandOpen) {
-                mesh.rotation.y += 0.005;
             }
 
-            composer.render();
+            if (typeof Hands === 'undefined') {
+                logError("MediaPipe库加载失败，请检查网络连接。");
+            } else {
+                const hands = new Hands({locateFile: (file) => {
+                    return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+                }});
+                
+                hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+                hands.onResults(onResults);
+
+                const cameraUtils = new Camera(videoElement, {
+                    onFrame: async () => { 
+                        await hands.send({image: videoElement}); 
+                    },
+                    width: 640, height: 480
+                });
+                
+                // 尝试启动摄像头
+                cameraUtils.start().catch(err => {
+                    logError("摄像头启动失败: " + err.message + "。请确保使用HTTPS或Localhost，并允许权限。");
+                });
+            }
+
+            // 5. 动画循环
+            function animate() {
+                requestAnimationFrame(animate);
+                for(let i=0; i<particleCount; i++) {
+                    const p = particles[i];
+                    const target = isHandOpen ? p.scatterPos : p.treePos;
+                    p.currentPos.lerp(target, 0.05);
+                    dummy.position.copy(p.currentPos);
+                    if(isHandOpen) { dummy.rotation.x += 0.01; dummy.rotation.y += 0.01; } 
+                    else { dummy.rotation.set(0,0,0); }
+                    dummy.updateMatrix();
+                    mesh.setMatrixAt(i, dummy.matrix);
+                }
+                mesh.instanceMatrix.needsUpdate = true;
+                if(!isHandOpen) mesh.rotation.y += 0.005;
+                composer.render();
+            }
+            animate();
+
+        } catch (e) {
+            logError("程序崩溃: " + e.message);
         }
-        animate();
 
         // 窗口自适应
         window.addEventListener('resize', () => {
